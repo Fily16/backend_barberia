@@ -14,4 +14,4 @@ RUN ./mvnw clean package -DskipTests
 EXPOSE 8080
 
 # Comando para iniciar la app (busca cualquier .jar generado)
-ENTRYPOINT ["java","-jar","target/*.jar"]
+ENTRYPOINT ["sh", "-c", "java -jar target/*.jar"]
