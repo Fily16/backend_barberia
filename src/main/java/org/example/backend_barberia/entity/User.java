@@ -37,6 +37,7 @@ public class User {
     @Column(nullable = false)
     private Role role;
 
+    @Builder.Default
     @Column(nullable = false)
     private Boolean active = true;
 
@@ -48,6 +49,7 @@ public class User {
 
     private LocalDateTime lastLogin;
 
+    @Builder.Default
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<UserCourse> userCourses = new HashSet<>();
 

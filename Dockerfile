@@ -1,4 +1,4 @@
-# Usamos una imagen ligera de Java 17 (o 21 si usas esa versión)
+# Usamos una imagen ligera de Java 17
 FROM eclipse-temurin:17-jdk-alpine
 
 # Copiamos los archivos de tu proyecto al contenedor
@@ -13,5 +13,5 @@ RUN ./mvnw clean package -DskipTests
 # Le decimos a Render que usaremos el puerto 8080
 EXPOSE 8080
 
-# Comando para iniciar la app (busca cualquier .jar generado)
-ENTRYPOINT ["sh", "-c", "java -jar target/*.jar"]
+# Comando para iniciar la app con perfil de PRODUCCIÓN
+ENTRYPOINT ["sh", "-c", "java -Dspring.profiles.active=prod -jar target/*.jar"]
