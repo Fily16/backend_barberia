@@ -34,9 +34,11 @@ public class Video {
     @Column(nullable = false)
     private VideoType type;
 
+    @Builder.Default
     @Column(nullable = false)
     private Integer orderIndex = 0;
 
+    @Builder.Default
     @Column(nullable = false)
     private Boolean active = true;
 

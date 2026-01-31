@@ -30,9 +30,11 @@ public class Course {
 
     private String thumbnailUrl;
 
+    @Builder.Default
     @Column(nullable = false)
     private Boolean active = true;
 
+    @Builder.Default
     @Column(nullable = false)
     private Integer orderIndex = 0;
 
@@ -41,6 +43,7 @@ public class Course {
 
     private LocalDateTime updatedAt;
 
+    @Builder.Default
     @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("orderIndex ASC")
     private List<Video> videos = new ArrayList<>();
