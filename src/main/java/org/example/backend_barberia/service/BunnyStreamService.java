@@ -218,10 +218,20 @@ public class BunnyStreamService {
     /**
      * Genera el signature para upload directo desde el frontend
      * Esto permite que el frontend suba directamente a Bunny sin pasar por nuestro servidor
+     * Formula: SHA256(library_id + api_key + expiration_time + video_id)
      */
     private String generateUploadSignature(String videoId, long expirationTime) {
         try {
+            // Según documentación de Bunny: SHA256(library_id + api_key + expiration_time + video_id)
             String stringToSign = bunnyConfig.getLibraryId() + bunnyConfig.getApiKey() + expirationTime + videoId;
+            
+            log.info("=== BUNNY SIGNATURE DEBUG ===");
+            log.info("LibraryId: {}", bunnyConfig.getLibraryId());
+            log.info("ApiKey length: {}", bunnyConfig.getApiKey().length());
+            log.info("ExpirationTime: {}", expirationTime);
+            log.info("VideoId: {}", videoId);
+            log.info("StringToSign: {}", stringToSign);
+            
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(stringToSign.getBytes());
             
@@ -231,6 +241,8 @@ public class BunnyStreamService {
                 if (hex.length() == 1) hexString.append('0');
                 hexString.append(hex);
             }
+            
+            log.info("Generated signature: {}", hexString.toString());
             return hexString.toString();
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("Error generando signature", e);

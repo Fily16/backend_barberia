@@ -13,7 +13,8 @@ import org.springframework.web.client.RestTemplate;
 @Setter
 public class BunnyStreamConfig {
 
-    private String apiKey;
+    private String apiKey;      // API Key para llamadas a la API
+    private String authKey;     // Token Authentication Key para signatures de upload
     private String libraryId;
     private String cdnHostname;
     private String apiUrl;
