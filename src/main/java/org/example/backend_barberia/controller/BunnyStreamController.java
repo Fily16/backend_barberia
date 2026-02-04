@@ -72,7 +72,10 @@ public class BunnyStreamController {
             return ResponseEntity.badRequest().body(Map.of("error", "Formato no válido. Usa JPG, PNG o WebP"));
         }
         
-        String thumbnailUrl = bunnyStreamService.uploadThumbnail(videoId, file.getBytes(), contentType);
-        return ResponseEntity.ok(Map.of("thumbnailUrl", thumbnailUrl));
+        // Convertir a Base64 data URL para almacenar directamente
+        String base64Image = java.util.Base64.getEncoder().encodeToString(file.getBytes());
+        String dataUrl = "data:" + contentType + ";base64," + base64Image;
+        
+        return ResponseEntity.ok(Map.of("thumbnailUrl", dataUrl));
     }
 }

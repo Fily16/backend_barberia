@@ -199,7 +199,11 @@ public class BunnyStreamService {
      */
     public String uploadThumbnail(String videoId, byte[] imageData, String contentType) {
         // Bunny acepta thumbnails via POST con la imagen en el body
+        // Endpoint: POST /library/{libraryId}/videos/{videoId}/thumbnail
         String url = bunnyConfig.getLibraryApiUrl() + "/videos/" + videoId + "/thumbnail";
+        
+        log.info("Subiendo thumbnail para video: {} - URL: {}", videoId, url);
+        log.info("Content-Type: {}, Size: {} bytes", contentType, imageData.length);
         
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -208,18 +212,26 @@ public class BunnyStreamService {
             
             HttpEntity<byte[]> entity = new HttpEntity<>(imageData, headers);
             ResponseEntity<String> response = restTemplate.exchange(
-                url + "?thumbnailUrl=", // thumbnailUrl vacío para subir desde body
+                url,
                 HttpMethod.POST, 
                 entity, 
                 String.class
             );
             
+            log.info("Thumbnail response status: {}", response.getStatusCode());
+            log.info("Thumbnail response body: {}", response.getBody());
             log.info("Thumbnail subido exitosamente para video: {}", videoId);
-            return bunnyConfig.getThumbnailUrl(videoId);
+            
+            // Agregar timestamp para evitar cache
+            return bunnyConfig.getThumbnailUrl(videoId) + "?v=" + System.currentTimeMillis();
         } catch (HttpClientErrorException.NotFound e) {
+            log.error("Video no encontrado: {}", videoId);
             throw new ResourceNotFoundException("Video no encontrado en Bunny: " + videoId);
         } catch (HttpClientErrorException e) {
-            log.error("Error subiendo thumbnail a Bunny: {}", e.getMessage());
+            log.error("Error subiendo thumbnail a Bunny: {} - Response: {}", e.getMessage(), e.getResponseBodyAsString());
+            throw new BadRequestException("Error al subir thumbnail: " + e.getMessage());
+        } catch (Exception e) {
+            log.error("Error inesperado subiendo thumbnail: {}", e.getMessage(), e);
             throw new BadRequestException("Error al subir thumbnail: " + e.getMessage());
         }
     }
