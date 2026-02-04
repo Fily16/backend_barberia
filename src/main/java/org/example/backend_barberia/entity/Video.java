@@ -26,6 +26,7 @@ public class Video {
     @Column(nullable = false)
     private String videoUrl; // URL del video (YouTube embed, Vimeo, etc.)
 
+    @Column(columnDefinition = "TEXT")
     private String thumbnailUrl;
 
     private String duration; // ej: "45:00"
