@@ -191,6 +191,40 @@ public class BunnyStreamService {
     }
 
     /**
+     * Sube un thumbnail personalizado para un video
+     * @param videoId ID del video en Bunny
+     * @param imageData Bytes de la imagen (JPG/PNG)
+     * @param contentType Tipo de contenido (image/jpeg, image/png)
+     * @return URL del thumbnail
+     */
+    public String uploadThumbnail(String videoId, byte[] imageData, String contentType) {
+        // Bunny acepta thumbnails via POST con la imagen en el body
+        String url = bunnyConfig.getLibraryApiUrl() + "/videos/" + videoId + "/thumbnail";
+        
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("AccessKey", bunnyConfig.getApiKey());
+            headers.setContentType(MediaType.parseMediaType(contentType));
+            
+            HttpEntity<byte[]> entity = new HttpEntity<>(imageData, headers);
+            ResponseEntity<String> response = restTemplate.exchange(
+                url + "?thumbnailUrl=", // thumbnailUrl vacío para subir desde body
+                HttpMethod.POST, 
+                entity, 
+                String.class
+            );
+            
+            log.info("Thumbnail subido exitosamente para video: {}", videoId);
+            return bunnyConfig.getThumbnailUrl(videoId);
+        } catch (HttpClientErrorException.NotFound e) {
+            throw new ResourceNotFoundException("Video no encontrado en Bunny: " + videoId);
+        } catch (HttpClientErrorException e) {
+            log.error("Error subiendo thumbnail a Bunny: {}", e.getMessage());
+            throw new BadRequestException("Error al subir thumbnail: " + e.getMessage());
+        }
+    }
+
+    /**
      * Obtiene las URLs de reproducción para un video
      */
     public VideoUrlsDto getVideoUrls(String videoId) {

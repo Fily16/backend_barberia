@@ -7,6 +7,10 @@ import org.example.backend_barberia.dto.bunny.*;
 import org.example.backend_barberia.service.BunnyStreamService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/bunny")
@@ -55,5 +59,20 @@ public class BunnyStreamController {
     @Operation(summary = "Obtener URLs", description = "Obtiene las URLs de reproducción de un video")
     public ResponseEntity<BunnyStreamService.VideoUrlsDto> getVideoUrls(@PathVariable String videoId) {
         return ResponseEntity.ok(bunnyStreamService.getVideoUrls(videoId));
+    }
+
+    @PostMapping("/videos/{videoId}/thumbnail")
+    @Operation(summary = "Subir thumbnail", description = "Sube un thumbnail personalizado para un video")
+    public ResponseEntity<Map<String, String>> uploadThumbnail(
+            @PathVariable String videoId,
+            @RequestParam("file") MultipartFile file) throws IOException {
+        
+        String contentType = file.getContentType();
+        if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png") && !contentType.equals("image/webp"))) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Formato no válido. Usa JPG, PNG o WebP"));
+        }
+        
+        String thumbnailUrl = bunnyStreamService.uploadThumbnail(videoId, file.getBytes(), contentType);
+        return ResponseEntity.ok(Map.of("thumbnailUrl", thumbnailUrl));
     }
 }
