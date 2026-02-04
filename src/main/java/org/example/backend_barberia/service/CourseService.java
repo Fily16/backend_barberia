@@ -19,6 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -30,6 +32,9 @@ public class CourseService {
     private final VideoRepository videoRepository;
     private final UserRepository userRepository;
     private final UserCourseRepository userCourseRepository;
+    
+    // Zona horaria de Perú
+    private static final ZoneId PERU_ZONE = ZoneId.of("America/Lima");
 
     // ==================== CURSOS ====================
 
@@ -188,8 +193,19 @@ public class CourseService {
         }
 
         LocalDateTime expiresAt = null;
-        if (request.getPlanType() == PlanType.TEMPORAL && request.getDurationMonths() != null) {
-            expiresAt = LocalDateTime.now().plusMonths(request.getDurationMonths());
+        if (request.getPlanType() == PlanType.TEMPORAL) {
+            // Obtener fecha/hora actual en zona horaria de Perú
+            ZonedDateTime nowPeru = ZonedDateTime.now(PERU_ZONE);
+            
+            if (request.getDurationDays() != null && request.getDurationDays() > 0) {
+                // Calcular expiración por días
+                expiresAt = nowPeru.plusDays(request.getDurationDays()).toLocalDateTime();
+            } else if (request.getDurationMonths() != null && request.getDurationMonths() > 0) {
+                // Calcular expiración por meses
+                expiresAt = nowPeru.plusMonths(request.getDurationMonths()).toLocalDateTime();
+            } else {
+                throw new BadRequestException("Para plan temporal debe especificar días o meses de duración");
+            }
         }
 
         UserCourse userCourse = UserCourse.builder()
@@ -213,13 +229,47 @@ public class CourseService {
             throw new BadRequestException("No se puede extender un plan ilimitado");
         }
 
+        // Usar zona horaria de Perú
+        ZonedDateTime nowPeru = ZonedDateTime.now(PERU_ZONE);
         LocalDateTime newExpiry;
-        if (userCourse.getExpiresAt() != null && userCourse.getExpiresAt().isAfter(LocalDateTime.now())) {
+        
+        if (userCourse.getExpiresAt() != null && userCourse.getExpiresAt().isAfter(nowPeru.toLocalDateTime())) {
             // Extender desde la fecha actual de expiración
             newExpiry = userCourse.getExpiresAt().plusMonths(additionalMonths);
         } else {
-            // Extender desde ahora
-            newExpiry = LocalDateTime.now().plusMonths(additionalMonths);
+            // Extender desde ahora (hora de Perú)
+            newExpiry = nowPeru.plusMonths(additionalMonths).toLocalDateTime();
+        }
+
+        userCourse.setExpiresAt(newExpiry);
+        userCourse.setActive(true);
+        
+        UserCourse saved = userCourseRepository.save(userCourse);
+        return mapUserCourseToResponse(saved);
+    }
+    
+    /**
+     * Extiende el acceso por días (para extensiones cortas)
+     */
+    @Transactional
+    public UserCourseResponse extendAccessByDays(Long userCourseId, Integer additionalDays) {
+        UserCourse userCourse = userCourseRepository.findById(userCourseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Asignación", userCourseId));
+
+        if (userCourse.getPlanType() == PlanType.UNLIMITED) {
+            throw new BadRequestException("No se puede extender un plan ilimitado");
+        }
+
+        // Usar zona horaria de Perú
+        ZonedDateTime nowPeru = ZonedDateTime.now(PERU_ZONE);
+        LocalDateTime newExpiry;
+        
+        if (userCourse.getExpiresAt() != null && userCourse.getExpiresAt().isAfter(nowPeru.toLocalDateTime())) {
+            // Extender desde la fecha actual de expiración
+            newExpiry = userCourse.getExpiresAt().plusDays(additionalDays);
+        } else {
+            // Extender desde ahora (hora de Perú)
+            newExpiry = nowPeru.plusDays(additionalDays).toLocalDateTime();
         }
 
         userCourse.setExpiresAt(newExpiry);

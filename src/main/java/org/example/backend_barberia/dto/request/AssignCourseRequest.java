@@ -18,4 +18,7 @@ public class AssignCourseRequest {
     
     // Meses de duración (solo para plan TEMPORAL)
     private Integer durationMonths;
+    
+    // Días de duración (solo para plan TEMPORAL) - Nueva opción
+    private Integer durationDays;
 }
