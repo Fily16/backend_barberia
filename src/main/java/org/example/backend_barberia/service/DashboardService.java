@@ -128,40 +128,51 @@ public class DashboardService {
     private BunnyCostsInfo getBunnyCosts(BigDecimal exchangeRate) {
         try {
             // Llamar a la API de Bunny para obtener info de la biblioteca
+            // IMPORTANTE: Usar Account API Key, no Stream API Key
             String url = "https://api.bunny.net/videolibrary/" + bunnyConfig.getLibraryId();
             
             HttpHeaders headers = new HttpHeaders();
-            headers.set("AccessKey", bunnyConfig.getApiKey());
+            headers.set("AccessKey", bunnyConfig.getAccountApiKey()); // Account API Key
             headers.setAccept(List.of(MediaType.APPLICATION_JSON));
             
             HttpEntity<Void> entity = new HttpEntity<>(headers);
+            
+            log.info("Llamando a Bunny API: {}", url);
             ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
             
             Map<String, Object> libraryInfo = response.getBody();
+            log.info("Respuesta de Bunny API: {}", libraryInfo);
             
             long storageUsedBytes = 0;
             int videoCount = 0;
+            long trafficUsage = 0;
             
             if (libraryInfo != null) {
                 storageUsedBytes = libraryInfo.get("StorageUsage") != null 
                         ? ((Number) libraryInfo.get("StorageUsage")).longValue() : 0;
                 videoCount = libraryInfo.get("VideoCount") != null 
                         ? ((Number) libraryInfo.get("VideoCount")).intValue() : 0;
+                trafficUsage = libraryInfo.get("TrafficUsage") != null
+                        ? ((Number) libraryInfo.get("TrafficUsage")).longValue() : 0;
+                        
+                log.info("Bunny Stats - Storage: {} bytes, Videos: {}, Traffic: {} bytes", 
+                        storageUsedBytes, videoCount, trafficUsage);
             }
             
             // Convertir bytes a GB
             double storageGb = storageUsedBytes / (1024.0 * 1024.0 * 1024.0);
+            double trafficGb = trafficUsage / (1024.0 * 1024.0 * 1024.0);
             
             // Calcular costo de almacenamiento
             BigDecimal storageCostUsd = BUNNY_STORAGE_PRICE_PER_GB
                     .multiply(new BigDecimal(storageGb))
                     .setScale(4, RoundingMode.HALF_UP);
             
-            // Estimar bandwidth (asumimos un uso moderado basado en el número de videos)
-            // Esto es una estimación, el bandwidth real depende del consumo
-            double estimatedBandwidthGb = videoCount * 2.0; // Asumimos 2GB por video al mes
+            // Calcular costo de bandwidth usando el dato real de TrafficUsage
+            // Si no hay dato de traffic, usar estimación
+            double bandwidthGb = trafficGb > 0 ? trafficGb : (videoCount * 2.0);
             BigDecimal bandwidthCostUsd = BUNNY_BANDWIDTH_PRICE_PER_GB
-                    .multiply(new BigDecimal(estimatedBandwidthGb))
+                    .multiply(new BigDecimal(bandwidthGb))
                     .setScale(4, RoundingMode.HALF_UP);
             
             // Costo total (mínimo $1)

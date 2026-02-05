@@ -61,6 +61,12 @@ public class BunnyStreamController {
         return ResponseEntity.ok(bunnyStreamService.getVideoUrls(videoId));
     }
 
+    @GetMapping("/storage")
+    @Operation(summary = "Estadísticas de almacenamiento", description = "Obtiene el uso de almacenamiento y tráfico de la biblioteca")
+    public ResponseEntity<BunnyStreamService.StorageStatsDto> getStorageStats() {
+        return ResponseEntity.ok(bunnyStreamService.getStorageStats());
+    }
+
     @PostMapping("/videos/{videoId}/thumbnail")
     @Operation(summary = "Subir thumbnail", description = "Sube un thumbnail personalizado para un video")
     public ResponseEntity<Map<String, String>> uploadThumbnail(

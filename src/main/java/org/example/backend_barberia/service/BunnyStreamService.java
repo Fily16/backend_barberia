@@ -296,6 +296,68 @@ public class BunnyStreamService {
     }
 
     /**
+     * Obtiene las estadísticas de almacenamiento de la biblioteca de videos
+     * Usa la Account API Key (diferente a la Stream API Key)
+     */
+    public StorageStatsDto getStorageStats() {
+        // Usar la API de Account de Bunny para obtener info de la biblioteca
+        String url = "https://api.bunny.net/videolibrary/" + bunnyConfig.getLibraryId();
+        
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("AccessKey", bunnyConfig.getAccountApiKey()); // Usar Account API Key
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+            
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<java.util.Map> response = restTemplate.exchange(
+                url, 
+                HttpMethod.GET, 
+                entity, 
+                java.util.Map.class
+            );
+            
+            java.util.Map<String, Object> body = response.getBody();
+            if (body == null) {
+                throw new BadRequestException("No se pudo obtener información de almacenamiento");
+            }
+            
+            // Extraer datos de storage
+            Long storageUsage = body.get("StorageUsage") != null ? 
+                    ((Number) body.get("StorageUsage")).longValue() : 0L;
+            Long trafficUsage = body.get("TrafficUsage") != null ? 
+                    ((Number) body.get("TrafficUsage")).longValue() : 0L;
+            Integer videoCount = body.get("VideoCount") != null ? 
+                    ((Number) body.get("VideoCount")).intValue() : 0;
+            String name = (String) body.get("Name");
+            
+            return StorageStatsDto.builder()
+                    .libraryId(bunnyConfig.getLibraryId())
+                    .libraryName(name)
+                    .storageUsedBytes(storageUsage)
+                    .storageUsedFormatted(formatBytes(storageUsage))
+                    .trafficUsedBytes(trafficUsage)
+                    .trafficUsedFormatted(formatBytes(trafficUsage))
+                    .videoCount(videoCount)
+                    .build();
+                    
+        } catch (HttpClientErrorException e) {
+            log.error("Error obteniendo storage de Bunny Account API: {} - Response: {}", 
+                    e.getMessage(), e.getResponseBodyAsString());
+            throw new BadRequestException("Error al obtener estadísticas de almacenamiento: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Formatea bytes a formato legible (KB, MB, GB)
+     */
+    private String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        int exp = (int) (Math.log(bytes) / Math.log(1024));
+        String pre = "KMGTPE".charAt(exp - 1) + "";
+        return String.format("%.2f %sB", bytes / Math.pow(1024, exp), pre);
+    }
+
+    /**
      * DTO interno para URLs de video
      */
     @lombok.Data
@@ -305,5 +367,20 @@ public class BunnyStreamService {
         private String embedUrl;
         private String directPlayUrl;
         private String thumbnailUrl;
+    }
+    
+    /**
+     * DTO para estadísticas de almacenamiento
+     */
+    @lombok.Data
+    @lombok.Builder
+    public static class StorageStatsDto {
+        private String libraryId;
+        private String libraryName;
+        private Long storageUsedBytes;
+        private String storageUsedFormatted;
+        private Long trafficUsedBytes;
+        private String trafficUsedFormatted;
+        private Integer videoCount;
     }
 }
