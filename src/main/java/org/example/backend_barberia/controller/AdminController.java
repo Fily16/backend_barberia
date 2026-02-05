@@ -6,6 +6,7 @@ import org.example.backend_barberia.dto.request.AssignCourseRequest;
 import org.example.backend_barberia.dto.request.CreateCourseRequest;
 import org.example.backend_barberia.dto.request.CreateUserRequest;
 import org.example.backend_barberia.dto.request.CreateVideoRequest;
+import org.example.backend_barberia.dto.request.ExtendAccessRequest;
 import org.example.backend_barberia.dto.response.*;
 import org.example.backend_barberia.service.CourseService;
 import org.example.backend_barberia.service.UserService;
@@ -159,6 +160,23 @@ public class AdminController {
         Integer months = request.get("months");
         UserCourseResponse assignment = courseService.extendAccess(id, months);
         return ResponseEntity.ok(ApiResponse.success("Acceso extendido", assignment));
+    }
+    
+    /**
+     * Extiende el acceso con registro de pago (renovación)
+     * POST /api/admin/user-courses/extend-with-payment
+     */
+    @PostMapping("/user-courses/extend-with-payment")
+    public ResponseEntity<ApiResponse<UserCourseResponse>> extendAccessWithPayment(
+            @Valid @RequestBody ExtendAccessRequest request) {
+        UserCourseResponse assignment = courseService.extendAccessWithPayment(
+                request.getUserCourseId(),
+                request.getDurationDays(),
+                request.getDurationMonths(),
+                request.getAmount(),
+                request.getCurrency()
+        );
+        return ResponseEntity.ok(ApiResponse.success("Acceso extendido y pago registrado", assignment));
     }
 
     @PatchMapping("/user-courses/{id}/revoke")

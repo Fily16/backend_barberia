@@ -12,12 +12,14 @@ import org.example.backend_barberia.exception.AccessDeniedException;
 import org.example.backend_barberia.exception.BadRequestException;
 import org.example.backend_barberia.exception.ResourceNotFoundException;
 import org.example.backend_barberia.repository.CourseRepository;
+import org.example.backend_barberia.repository.PaymentRepository;
 import org.example.backend_barberia.repository.UserCourseRepository;
 import org.example.backend_barberia.repository.UserRepository;
 import org.example.backend_barberia.repository.VideoRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -32,6 +34,8 @@ public class CourseService {
     private final VideoRepository videoRepository;
     private final UserRepository userRepository;
     private final UserCourseRepository userCourseRepository;
+    private final PaymentRepository paymentRepository;
+    private final ExchangeRateService exchangeRateService;
     
     // Zona horaria de Perú
     private static final ZoneId PERU_ZONE = ZoneId.of("America/Lima");
@@ -217,7 +221,59 @@ public class CourseService {
                 .build();
 
         UserCourse saved = userCourseRepository.save(userCourse);
+        
+        // Registrar el pago si se proporcionó monto
+        if (request.getAmount() != null && request.getAmount().compareTo(BigDecimal.ZERO) > 0) {
+            registerPaymentForAssignment(request, user, course, saved);
+        }
+        
         return mapUserCourseToResponse(saved);
+    }
+    
+    /**
+     * Registra el pago asociado a una asignación de curso
+     */
+    private void registerPaymentForAssignment(AssignCourseRequest request, User user, Course course, UserCourse userCourse) {
+        // Calcular monto en PEN
+        BigDecimal amountInPen;
+        BigDecimal exchangeRate = null;
+        
+        Currency currency = request.getCurrency() != null ? request.getCurrency() : Currency.PEN;
+        
+        if (currency == Currency.USD) {
+            exchangeRate = exchangeRateService.getUsdToPenRate();
+            amountInPen = exchangeRateService.convertUsdToPen(request.getAmount());
+        } else {
+            amountInPen = request.getAmount();
+        }
+        
+        // Construir descripción
+        String description = "Nueva suscripción - ";
+        if (request.getPlanType() == PlanType.UNLIMITED) {
+            description += "Plan Ilimitado";
+        } else if (request.getDurationDays() != null && request.getDurationDays() > 0) {
+            description += request.getDurationDays() + " días";
+        } else if (request.getDurationMonths() != null && request.getDurationMonths() > 0) {
+            description += request.getDurationMonths() + (request.getDurationMonths() == 1 ? " mes" : " meses");
+        }
+        
+        Payment payment = Payment.builder()
+                .user(user)
+                .course(course)
+                .userCourse(userCourse)
+                .amount(request.getAmount())
+                .currency(currency)
+                .amountInPen(amountInPen)
+                .exchangeRate(exchangeRate)
+                .paymentType(PaymentType.NEW)
+                .planType(request.getPlanType())
+                .durationDays(request.getDurationDays())
+                .durationMonths(request.getDurationMonths())
+                .description(description)
+                .paymentDate(LocalDateTime.now())
+                .build();
+        
+        paymentRepository.save(payment);
     }
 
     @Transactional
@@ -246,6 +302,87 @@ public class CourseService {
         
         UserCourse saved = userCourseRepository.save(userCourse);
         return mapUserCourseToResponse(saved);
+    }
+    
+    /**
+     * Extiende el acceso con registro de pago (renovación)
+     */
+    @Transactional
+    public UserCourseResponse extendAccessWithPayment(Long userCourseId, Integer durationDays, Integer durationMonths, 
+                                                       BigDecimal amount, Currency currency) {
+        UserCourse userCourse = userCourseRepository.findById(userCourseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Asignación", userCourseId));
+
+        if (userCourse.getPlanType() == PlanType.UNLIMITED) {
+            throw new BadRequestException("No se puede extender un plan ilimitado");
+        }
+
+        // Usar zona horaria de Perú
+        ZonedDateTime nowPeru = ZonedDateTime.now(PERU_ZONE);
+        LocalDateTime baseDate = (userCourse.getExpiresAt() != null && userCourse.getExpiresAt().isAfter(nowPeru.toLocalDateTime()))
+                ? userCourse.getExpiresAt()
+                : nowPeru.toLocalDateTime();
+        
+        LocalDateTime newExpiry;
+        String durationDesc;
+        
+        if (durationDays != null && durationDays > 0) {
+            newExpiry = baseDate.plusDays(durationDays);
+            durationDesc = durationDays + " días";
+        } else if (durationMonths != null && durationMonths > 0) {
+            newExpiry = baseDate.plusMonths(durationMonths);
+            durationDesc = durationMonths + (durationMonths == 1 ? " mes" : " meses");
+        } else {
+            throw new BadRequestException("Debe especificar días o meses de duración");
+        }
+
+        userCourse.setExpiresAt(newExpiry);
+        userCourse.setActive(true);
+        
+        UserCourse saved = userCourseRepository.save(userCourse);
+        
+        // Registrar el pago de renovación si se proporcionó monto
+        if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0) {
+            registerRenewalPayment(userCourse, amount, currency != null ? currency : Currency.PEN, 
+                                   durationDays, durationMonths, durationDesc);
+        }
+        
+        return mapUserCourseToResponse(saved);
+    }
+    
+    /**
+     * Registra un pago de renovación
+     */
+    private void registerRenewalPayment(UserCourse userCourse, BigDecimal amount, Currency currency,
+                                        Integer durationDays, Integer durationMonths, String durationDesc) {
+        // Calcular monto en PEN
+        BigDecimal amountInPen;
+        BigDecimal exchangeRate = null;
+        
+        if (currency == Currency.USD) {
+            exchangeRate = exchangeRateService.getUsdToPenRate();
+            amountInPen = exchangeRateService.convertUsdToPen(amount);
+        } else {
+            amountInPen = amount;
+        }
+        
+        Payment payment = Payment.builder()
+                .user(userCourse.getUser())
+                .course(userCourse.getCourse())
+                .userCourse(userCourse)
+                .amount(amount)
+                .currency(currency)
+                .amountInPen(amountInPen)
+                .exchangeRate(exchangeRate)
+                .paymentType(PaymentType.RENEWAL)
+                .planType(PlanType.TEMPORAL)
+                .durationDays(durationDays)
+                .durationMonths(durationMonths)
+                .description("Renovación - " + durationDesc)
+                .paymentDate(LocalDateTime.now())
+                .build();
+        
+        paymentRepository.save(payment);
     }
     
     /**
