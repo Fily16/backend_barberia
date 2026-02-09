@@ -1,6 +1,7 @@
 package org.example.backend_barberia.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.backend_barberia.dto.request.CreateUserRequest;
 import org.example.backend_barberia.dto.response.UserCourseResponse;
 import org.example.backend_barberia.dto.response.UserResponse;
@@ -19,10 +20,12 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
 
     public List<UserResponse> getAllStudents() {
         return userRepository.findByRole(Role.STUDENT)
@@ -55,6 +58,9 @@ public class UserService {
             throw new BadRequestException("El email ya está registrado");
         }
 
+        // Guardar password original antes de encriptar (para enviar por correo)
+        String originalPassword = request.getPassword();
+
         User user = User.builder()
                 .username(request.getUsername())
                 .password(passwordEncoder.encode(request.getPassword()))
@@ -66,6 +72,25 @@ public class UserService {
                 .build();
 
         User savedUser = userRepository.save(user);
+        
+        // Enviar correo de bienvenida si tiene email
+        if (savedUser.getEmail() != null && !savedUser.getEmail().isEmpty()) {
+            try {
+                boolean emailSent = emailService.sendWelcomeEmail(
+                        savedUser.getEmail(),
+                        savedUser.getFullName(),
+                        savedUser.getUsername(),
+                        originalPassword
+                );
+                if (emailSent) {
+                    log.info("Correo de bienvenida enviado a: {}", savedUser.getEmail());
+                }
+            } catch (Exception e) {
+                // No fallar si el correo no se envia
+                log.error("Error enviando correo de bienvenida: {}", e.getMessage());
+            }
+        }
+        
         return mapToResponse(savedUser);
     }
 

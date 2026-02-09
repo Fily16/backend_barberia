@@ -3,9 +3,7 @@ package org.example.backend_barberia.config;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.backend_barberia.entity.*;
-import org.example.backend_barberia.repository.CourseRepository;
-import org.example.backend_barberia.repository.UserRepository;
-import org.example.backend_barberia.repository.VideoRepository;
+import org.example.backend_barberia.repository.*;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,9 +20,42 @@ public class DataInitializer {
     CommandLineRunner initData(
             UserRepository userRepository,
             CourseRepository courseRepository,
-            VideoRepository videoRepository
+            VideoRepository videoRepository,
+            EmailConfigRepository emailConfigRepository,
+            NotificationSettingsRepository notificationSettingsRepository
     ) {
         return args -> {
+            // Crear configuracion de email si no existe
+            if (emailConfigRepository.getConfig().isEmpty()) {
+                EmailConfig emailConfig = EmailConfig.builder()
+                        .id(1L)
+                        .senderEmail("yanfilybacatorres@gmail.com")
+                        .appPassword("epit vixx pyda rffx")
+                        .senderName("Ralph Cuts Academy")
+                        .enabled(true)
+                        .build();
+                emailConfigRepository.save(emailConfig);
+                log.info("✅ Configuracion de email creada");
+            }
+
+            // Crear configuracion de notificaciones si no existe
+            if (notificationSettingsRepository.getSettings().isEmpty()) {
+                NotificationSettings settings = NotificationSettings.builder()
+                        .id(1L)
+                        .adminWhatsApp("")
+                        .emailOnWelcome(true)
+                        .emailOnExpiringSoon(true)
+                        .emailDaysBeforeExpiry(3)
+                        .emailOnExpired(true)
+                        .whatsappOnWelcome(false)
+                        .whatsappOnExpiringSoon(false)
+                        .whatsappDaysBeforeExpiry(3)
+                        .whatsappOnExpired(false)
+                        .build();
+                notificationSettingsRepository.save(settings);
+                log.info("✅ Configuracion de notificaciones creada");
+            }
+
             // Crear usuario ADMIN si no existe
             if (!userRepository.existsByUsername("admin")) {
                 User admin = User.builder()
