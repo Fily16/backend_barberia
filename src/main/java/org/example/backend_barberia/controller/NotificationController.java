@@ -30,28 +30,28 @@ public class NotificationController {
     @Operation(summary = "Obtener config de email")
     public ResponseEntity<?> getEmailConfig() {
         return emailService.getEmailConfig()
-                .map(config -> ResponseEntity.ok(Map.of(
-                        "configured", true,
-                        "senderEmail", config.getSenderEmail(),
-                        "senderName", config.getSenderName(),
-                        "enabled", config.getEnabled(),
-                        "logoUrl", config.getLogoUrl() != null ? config.getLogoUrl() : "",
-                        "primaryColor", config.getPrimaryColor(),
-                        "backgroundColor", config.getBackgroundColor(),
-                        "textColor", config.getTextColor(),
-                        "buttonUrl", config.getButtonUrl(),
-                        "welcomeSubject", config.getWelcomeSubject(),
-                        "welcomeTitle", config.getWelcomeTitle(),
-                        "welcomeMessage", config.getWelcomeMessage(),
-                        "welcomeButtonText", config.getWelcomeButtonText(),
-                        "expiringSubject", config.getExpiringSubject(),
-                        "expiringTitle", config.getExpiringTitle(),
-                        "expiringMessage", config.getExpiringMessage(),
-                        "expiringButtonText", config.getExpiringButtonText(),
-                        "expiredSubject", config.getExpiredSubject(),
-                        "expiredTitle", config.getExpiredTitle(),
-                        "expiredMessage", config.getExpiredMessage(),
-                        "expiredButtonText", config.getExpiredButtonText()
+                .map(config -> ResponseEntity.ok(Map.ofEntries(
+                        Map.entry("configured", true),
+                        Map.entry("senderEmail", config.getSenderEmail()),
+                        Map.entry("senderName", config.getSenderName()),
+                        Map.entry("enabled", config.getEnabled()),
+                        Map.entry("logoUrl", config.getLogoUrl() != null ? config.getLogoUrl() : ""),
+                        Map.entry("primaryColor", config.getPrimaryColor()),
+                        Map.entry("backgroundColor", config.getBackgroundColor()),
+                        Map.entry("textColor", config.getTextColor()),
+                        Map.entry("buttonUrl", config.getButtonUrl()),
+                        Map.entry("welcomeSubject", config.getWelcomeSubject()),
+                        Map.entry("welcomeTitle", config.getWelcomeTitle()),
+                        Map.entry("welcomeMessage", config.getWelcomeMessage()),
+                        Map.entry("welcomeButtonText", config.getWelcomeButtonText()),
+                        Map.entry("expiringSubject", config.getExpiringSubject()),
+                        Map.entry("expiringTitle", config.getExpiringTitle()),
+                        Map.entry("expiringMessage", config.getExpiringMessage()),
+                        Map.entry("expiringButtonText", config.getExpiringButtonText()),
+                        Map.entry("expiredSubject", config.getExpiredSubject()),
+                        Map.entry("expiredTitle", config.getExpiredTitle()),
+                        Map.entry("expiredMessage", config.getExpiredMessage()),
+                        Map.entry("expiredButtonText", config.getExpiredButtonText())
                 )))
                 .orElse(ResponseEntity.ok(Map.of("configured", false)));
     }
