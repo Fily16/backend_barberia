@@ -1,18 +1,15 @@
 package org.example.backend_barberia.service;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.backend_barberia.entity.EmailConfig;
 import org.example.backend_barberia.repository.EmailConfigRepository;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.JavaMailSenderImpl;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
-import java.util.Optional;
-import java.util.Properties;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +17,12 @@ import java.util.Properties;
 public class EmailService {
 
     private final EmailConfigRepository emailConfigRepository;
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    private static final String RESEND_API_URL = "https://api.resend.com/emails";
+
+    @Value("${resend.api-key:}")
+    private String resendApiKey;
 
     /**
      * Obtiene la configuracion actual del correo
@@ -46,29 +49,51 @@ public class EmailService {
         return emailConfigRepository.save(config);
     }
 
+    // ==================== ENVIO DE CORREOS VIA RESEND API ====================
+
     /**
-     * Crea un JavaMailSender dinamico basado en la configuracion guardada.
-     * Usa puerto 465 con SSL (compatible con Render y la mayoria de hostings cloud).
+     * Envia un correo usando la API HTTP de Resend.
+     * Funciona en cualquier hosting (Render, Railway, etc.) sin restricciones SMTP.
      */
-    private JavaMailSender createMailSender(EmailConfig config) {
-        JavaMailSenderImpl mailSender = new JavaMailSenderImpl();
-        mailSender.setHost("smtp.gmail.com");
-        mailSender.setPort(465);
-        mailSender.setUsername(config.getSenderEmail());
-        mailSender.setPassword(config.getAppPassword().replace(" ", ""));
+    private boolean sendViaResend(String toEmail, String subject, String htmlContent, EmailConfig config) {
+        if (resendApiKey == null || resendApiKey.isBlank()) {
+            log.error("RESEND_API_KEY no configurada");
+            throw new RuntimeException("RESEND_API_KEY no está configurada en el servidor.");
+        }
 
-        Properties props = mailSender.getJavaMailProperties();
-        props.put("mail.transport.protocol", "smtps");
-        props.put("mail.smtps.auth", "true");
-        props.put("mail.smtps.ssl.enable", "true");
-        props.put("mail.smtps.ssl.trust", "smtp.gmail.com");
-        props.put("mail.debug", "false");
-        // Timeouts para evitar que la conexion se quede colgada
-        props.put("mail.smtps.connectiontimeout", "15000");
-        props.put("mail.smtps.timeout", "15000");
-        props.put("mail.smtps.writetimeout", "15000");
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(resendApiKey);
 
-        return mailSender;
+            // Resend free tier: from debe ser onboarding@resend.dev
+            // El senderEmail se usa como reply-to para que las respuestas lleguen al correo real
+            String fromEmail = config.getSenderName() + " <onboarding@resend.dev>";
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("from", fromEmail);
+            body.put("to", List.of(toEmail));
+            body.put("subject", subject);
+            body.put("html", htmlContent);
+            body.put("reply_to", config.getSenderEmail());
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    RESEND_API_URL, HttpMethod.POST, request, Map.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("Correo enviado via Resend a: {}", toEmail);
+                return true;
+            } else {
+                log.error("Resend respondio con status {}: {}", response.getStatusCode(), response.getBody());
+                return false;
+            }
+
+        } catch (Exception e) {
+            log.error("Error enviando correo via Resend a {}: {}", toEmail, e.getMessage());
+            throw new RuntimeException("Error al enviar correo: " + e.getMessage());
+        }
     }
 
     /**
@@ -89,36 +114,17 @@ public class EmailService {
 
         EmailConfig config = configOpt.get();
 
-        if (config.getAppPassword() == null || config.getAppPassword().isBlank()) {
-            log.warn("No hay App Password configurada. No se enviara correo de bienvenida.");
-            return false;
-        }
-
         try {
-            JavaMailSender mailSender = createMailSender(config);
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(config.getSenderEmail(), config.getSenderName());
-            helper.setTo(toEmail);
-            helper.setSubject(config.getWelcomeSubject());
-
             String title = config.getWelcomeTitle().replace("{nombre}", studentName);
             String content = config.getWelcomeMessage();
 
             String htmlContent = buildEmailHtml(config, title, content, username, password,
                     config.getWelcomeButtonText(), config.getButtonUrl());
-            helper.setText(htmlContent, true);
 
-            mailSender.send(message);
-            log.info("Correo de bienvenida enviado a: {}", toEmail);
-            return true;
+            return sendViaResend(toEmail, config.getWelcomeSubject(), htmlContent, config);
 
-        } catch (MessagingException e) {
-            log.error("Error enviando correo a {}: {}", toEmail, e.getMessage());
-            return false;
         } catch (Exception e) {
-            log.error("Error inesperado enviando correo: {}", e.getMessage());
+            log.error("Error enviando correo de bienvenida a {}: {}", toEmail, e.getMessage());
             return false;
         }
     }
@@ -139,20 +145,7 @@ public class EmailService {
 
         EmailConfig config = configOpt.get();
 
-        if (config.getAppPassword() == null || config.getAppPassword().isBlank()) {
-            log.warn("No hay App Password configurada. No se enviara correo de vencimiento.");
-            return false;
-        }
-
         try {
-            JavaMailSender mailSender = createMailSender(config);
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(config.getSenderEmail(), config.getSenderName());
-            helper.setTo(toEmail);
-            helper.setSubject(config.getExpiringSubject());
-
             String title = config.getExpiringTitle()
                     .replace("{nombre}", studentName);
             String content = config.getExpiringMessage()
@@ -162,11 +155,8 @@ public class EmailService {
 
             String htmlContent = buildEmailHtml(config, title, content, null, null,
                     config.getExpiringButtonText(), config.getButtonUrl());
-            helper.setText(htmlContent, true);
 
-            mailSender.send(message);
-            log.info("Correo de vencimiento enviado a: {}", toEmail);
-            return true;
+            return sendViaResend(toEmail, config.getExpiringSubject(), htmlContent, config);
 
         } catch (Exception e) {
             log.error("Error enviando correo de vencimiento: {}", e.getMessage());
@@ -190,20 +180,7 @@ public class EmailService {
 
         EmailConfig config = configOpt.get();
 
-        if (config.getAppPassword() == null || config.getAppPassword().isBlank()) {
-            log.warn("No hay App Password configurada. No se enviara correo de vencido.");
-            return false;
-        }
-
         try {
-            JavaMailSender mailSender = createMailSender(config);
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(config.getSenderEmail(), config.getSenderName());
-            helper.setTo(toEmail);
-            helper.setSubject(config.getExpiredSubject());
-
             String title = config.getExpiredTitle()
                     .replace("{nombre}", studentName);
             String content = config.getExpiredMessage()
@@ -212,11 +189,8 @@ public class EmailService {
 
             String htmlContent = buildEmailHtml(config, title, content, null, null,
                     config.getExpiredButtonText(), config.getButtonUrl());
-            helper.setText(htmlContent, true);
 
-            mailSender.send(message);
-            log.info("Correo de vencido enviado a: {}", toEmail);
-            return true;
+            return sendViaResend(toEmail, config.getExpiredSubject(), htmlContent, config);
 
         } catch (Exception e) {
             log.error("Error enviando correo de vencido: {}", e.getMessage());
@@ -240,29 +214,14 @@ public class EmailService {
 
         EmailConfig config = configOpt.get();
 
-        if (config.getAppPassword() == null || config.getAppPassword().isBlank()) {
-            log.warn("No hay App Password configurada. No se enviara correo masivo.");
-            return false;
-        }
-
         try {
-            JavaMailSender mailSender = createMailSender(config);
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(config.getSenderEmail(), config.getSenderName());
-            helper.setTo(toEmail);
-            helper.setSubject(subject);
-
             String title = "¡Hola, " + studentName + "!";
             String content = customMessage.replace("{nombre}", studentName);
 
             String htmlContent = buildEmailHtml(config, title, content, null, null,
                     "VER MAS", config.getButtonUrl());
-            helper.setText(htmlContent, true);
 
-            mailSender.send(message);
-            return true;
+            return sendViaResend(toEmail, subject, htmlContent, config);
 
         } catch (Exception e) {
             log.error("Error enviando correo masivo a {}: {}", toEmail, e.getMessage());
@@ -277,44 +236,24 @@ public class EmailService {
         Optional<EmailConfig> configOpt = emailConfigRepository.getConfig();
 
         if (configOpt.isEmpty()) {
-            log.error("No hay configuracion de correo guardada");
             throw new RuntimeException("No hay configuración de correo guardada. Guarda la configuración primero.");
         }
 
         EmailConfig config = configOpt.get();
 
-        if (config.getAppPassword() == null || config.getAppPassword().isBlank()) {
-            log.error("No hay contraseña de aplicación configurada");
-            throw new RuntimeException("No hay contraseña de aplicación configurada. Ingresa tu App Password de Gmail.");
-        }
-
         if (config.getSenderEmail() == null || config.getSenderEmail().isBlank()) {
-            log.error("No hay correo emisor configurado");
             throw new RuntimeException("No hay correo emisor configurado.");
         }
 
-        try {
-            JavaMailSender mailSender = createMailSender(config);
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(config.getSenderEmail(), config.getSenderName());
-            helper.setTo(toEmail);
-            helper.setSubject("Prueba de configuracion - " + config.getSenderName());
-
-            String htmlContent = buildEmailHtml(config, "¡Configuracion correcta!",
-                    "El sistema de correos esta funcionando correctamente.", null, null,
-                    "IR A LA PLATAFORMA", config.getButtonUrl());
-            helper.setText(htmlContent, true);
-
-            mailSender.send(message);
-            log.info("Correo de prueba enviado exitosamente a: {}", toEmail);
-            return true;
-
-        } catch (Exception e) {
-            log.error("Error en prueba de correo a {}: {}", toEmail, e.getMessage(), e);
-            throw new RuntimeException("Error al enviar: " + e.getMessage());
+        if (resendApiKey == null || resendApiKey.isBlank()) {
+            throw new RuntimeException("RESEND_API_KEY no está configurada en el servidor. Agrega la variable de entorno en Render.");
         }
+
+        String htmlContent = buildEmailHtml(config, "¡Configuración correcta!",
+                "El sistema de correos está funcionando correctamente mediante Resend.", null, null,
+                "IR A LA PLATAFORMA", config.getButtonUrl());
+
+        return sendViaResend(toEmail, "Prueba de configuración - " + config.getSenderName(), htmlContent, config);
     }
 
     /**
@@ -337,7 +276,7 @@ public class EmailService {
                 + "<p style=\"color: #ffffff; margin: 8px 0; font-size: 15px;\"><strong>Usuario:</strong> <span style=\"color: " + config.getPrimaryColor() + "; font-family: monospace;\">" + username + "</span></p>"
                 + "<p style=\"color: #ffffff; margin: 8px 0; font-size: 15px;\"><strong>Contraseña:</strong> <span style=\"color: " + config.getPrimaryColor() + "; font-family: monospace;\">" + password + "</span></p>"
                 + "</div>"
-                + "<p style=\"color: #888; font-size: 13px; margin: 20px 0;\">⚠️ Te recomendamos cambiar tu contraseña despues de tu primer inicio de sesion.</p>";
+                + "<p style=\"color: #888; font-size: 13px; margin: 20px 0;\">⚠️ Te recomendamos cambiar tu contraseña después de tu primer inicio de sesión.</p>";
         }
 
         return "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"></head>"
