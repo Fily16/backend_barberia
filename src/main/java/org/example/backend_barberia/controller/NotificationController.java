@@ -76,11 +76,18 @@ public class NotificationController {
     @PostMapping("/email/test")
     @Operation(summary = "Enviar email de prueba")
     public ResponseEntity<?> sendTestEmail(@RequestParam String toEmail) {
-        boolean success = emailService.sendTestEmail(toEmail);
-        return ResponseEntity.ok(Map.of(
-                "success", success,
-                "message", success ? "Correo de prueba enviado" : "Error al enviar correo"
-        ));
+        try {
+            boolean success = emailService.sendTestEmail(toEmail);
+            return ResponseEntity.ok(Map.of(
+                    "success", success,
+                    "message", success ? "Correo de prueba enviado a " + toEmail : "Error al enviar correo"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
     }
 
     // ==================== CONFIGURACION NOTIFICACIONES ====================

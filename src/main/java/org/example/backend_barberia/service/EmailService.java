@@ -29,10 +29,20 @@ public class EmailService {
     }
 
     /**
-     * Guarda o actualiza la configuracion del correo
+     * Guarda o actualiza la configuracion del correo.
+     * Si no se envia appPassword (porque el frontend no lo devuelve), 
+     * se conserva el password existente en la BD.
      */
     public EmailConfig saveEmailConfig(EmailConfig config) {
         config.setId(1L);
+        
+        // Si el appPassword viene null o vacio, conservar el existente de la BD
+        if (config.getAppPassword() == null || config.getAppPassword().isBlank()) {
+            emailConfigRepository.findById(1L).ifPresent(existing -> {
+                config.setAppPassword(existing.getAppPassword());
+            });
+        }
+        
         return emailConfigRepository.save(config);
     }
 
@@ -243,11 +253,21 @@ public class EmailService {
         Optional<EmailConfig> configOpt = emailConfigRepository.getConfig();
         
         if (configOpt.isEmpty()) {
-            log.error("No hay configuracion de correo guardada");
-            return false;
+            log.error("No hay configuracion de correo guardada. Guarda la configuracion primero.");
+            throw new RuntimeException("No hay configuración de correo guardada. Guarda la configuración primero.");
         }
 
         EmailConfig config = configOpt.get();
+        
+        if (config.getAppPassword() == null || config.getAppPassword().isBlank()) {
+            log.error("No hay contraseña de aplicación configurada");
+            throw new RuntimeException("No hay contraseña de aplicación configurada. Ingresa tu App Password de Gmail.");
+        }
+        
+        if (config.getSenderEmail() == null || config.getSenderEmail().isBlank()) {
+            log.error("No hay correo emisor configurado");
+            throw new RuntimeException("No hay correo emisor configurado.");
+        }
         
         try {
             JavaMailSender mailSender = createMailSender(config);
@@ -268,8 +288,8 @@ public class EmailService {
             return true;
 
         } catch (Exception e) {
-            log.error("Error en prueba de correo: {}", e.getMessage());
-            return false;
+            log.error("Error en prueba de correo: {}", e.getMessage(), e);
+            throw new RuntimeException("Error al enviar: " + e.getMessage());
         }
     }
 

@@ -53,9 +53,23 @@ public class UserService {
             throw new BadRequestException("El nombre de usuario ya está en uso");
         }
 
-        // Verificar email si se proporciona
-        if (request.getEmail() != null && userRepository.existsByEmail(request.getEmail())) {
-            throw new BadRequestException("El email ya está registrado");
+        // Normalizar email: tratar vacío como null
+        String email = request.getEmail();
+        if (email != null && email.isBlank()) {
+            email = null;
+            request.setEmail(null);
+        }
+
+        // Verificar email si se proporciona (solo entre STUDENTs, no incluir ADMIN)
+        if (email != null) {
+            var existingUser = userRepository.findByEmail(email);
+            if (existingUser.isPresent()) {
+                // Solo bloquear si el usuario con ese email es STUDENT activo
+                User existing = existingUser.get();
+                if (existing.getRole() == Role.STUDENT) {
+                    throw new BadRequestException("El email ya está registrado por el estudiante: " + existing.getFullName());
+                }
+            }
         }
 
         // Guardar password original antes de encriptar (para enviar por correo)
@@ -105,9 +119,23 @@ public class UserService {
             throw new BadRequestException("El nombre de usuario ya está en uso");
         }
 
+        // Normalizar email: tratar vacío como null
+        String email = request.getEmail();
+        if (email != null && email.isBlank()) {
+            email = null;
+        }
+
+        // Verificar email si cambió y no es null
+        if (email != null && !email.equals(user.getEmail())) {
+            var existingUser = userRepository.findByEmail(email);
+            if (existingUser.isPresent() && !existingUser.get().getId().equals(id)) {
+                throw new BadRequestException("El email ya está registrado por: " + existingUser.get().getFullName());
+            }
+        }
+
         user.setUsername(request.getUsername());
         user.setFullName(request.getFullName());
-        user.setEmail(request.getEmail());
+        user.setEmail(email);
         user.setPhone(request.getPhone());
 
         // Solo actualizar password si se proporciona uno nuevo
