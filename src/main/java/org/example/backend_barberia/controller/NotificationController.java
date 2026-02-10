@@ -32,6 +32,7 @@ public class NotificationController {
         return emailService.getEmailConfig()
                 .map(config -> ResponseEntity.ok(Map.ofEntries(
                         Map.entry("configured", true),
+                        Map.entry("hasAppPassword", config.getAppPassword() != null && !config.getAppPassword().isBlank()),
                         Map.entry("senderEmail", config.getSenderEmail()),
                         Map.entry("senderName", config.getSenderName()),
                         Map.entry("enabled", config.getEnabled()),

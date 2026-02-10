@@ -47,25 +47,26 @@ public class EmailService {
     }
 
     /**
-     * Crea un JavaMailSender dinamico basado en la configuracion guardada
+     * Crea un JavaMailSender dinamico basado en la configuracion guardada.
+     * Usa puerto 465 con SSL (compatible con Render y la mayoria de hostings cloud).
      */
     private JavaMailSender createMailSender(EmailConfig config) {
         JavaMailSenderImpl mailSender = new JavaMailSenderImpl();
         mailSender.setHost("smtp.gmail.com");
-        mailSender.setPort(587);
+        mailSender.setPort(465);
         mailSender.setUsername(config.getSenderEmail());
         mailSender.setPassword(config.getAppPassword().replace(" ", ""));
 
         Properties props = mailSender.getJavaMailProperties();
-        props.put("mail.transport.protocol", "smtp");
-        props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.starttls.enable", "true");
-        props.put("mail.smtp.starttls.required", "true");
+        props.put("mail.transport.protocol", "smtps");
+        props.put("mail.smtps.auth", "true");
+        props.put("mail.smtps.ssl.enable", "true");
+        props.put("mail.smtps.ssl.trust", "smtp.gmail.com");
         props.put("mail.debug", "false");
-        // Timeouts para evitar que la conexion se quede colgada indefinidamente
-        props.put("mail.smtp.connectiontimeout", "10000");
-        props.put("mail.smtp.timeout", "10000");
-        props.put("mail.smtp.writetimeout", "10000");
+        // Timeouts para evitar que la conexion se quede colgada
+        props.put("mail.smtps.connectiontimeout", "15000");
+        props.put("mail.smtps.timeout", "15000");
+        props.put("mail.smtps.writetimeout", "15000");
 
         return mailSender;
     }
