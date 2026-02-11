@@ -19,10 +19,10 @@ public class EmailService {
     private final EmailConfigRepository emailConfigRepository;
     private final RestTemplate restTemplate = new RestTemplate();
 
-    private static final String RESEND_API_URL = "https://api.resend.com/emails";
+    private static final String BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 
-    @Value("${resend.api-key:}")
-    private String resendApiKey;
+    @Value("${brevo.api-key:}")
+    private String brevoApiKey;
 
     /**
      * Obtiene la configuracion actual del correo
@@ -39,7 +39,6 @@ public class EmailService {
     public EmailConfig saveEmailConfig(EmailConfig config) {
         config.setId(1L);
 
-        // Si el appPassword viene null o vacio, conservar el existente de la BD
         if (config.getAppPassword() == null || config.getAppPassword().isBlank()) {
             emailConfigRepository.findById(1L).ifPresent(existing ->
                 config.setAppPassword(existing.getAppPassword())
@@ -49,56 +48,59 @@ public class EmailService {
         return emailConfigRepository.save(config);
     }
 
-    // ==================== ENVIO DE CORREOS VIA RESEND API ====================
+    // ==================== ENVIO VIA BREVO API ====================
 
     /**
-     * Envia un correo usando la API HTTP de Resend.
-     * Funciona en cualquier hosting (Render, Railway, etc.) sin restricciones SMTP.
+     * Envia un correo usando la API HTTP de Brevo (ex Sendinblue).
+     * Funciona en cualquier hosting sin restricciones de puertos SMTP.
      */
-    private boolean sendViaResend(String toEmail, String subject, String htmlContent, EmailConfig config) {
-        if (resendApiKey == null || resendApiKey.isBlank()) {
-            log.error("RESEND_API_KEY no configurada");
-            throw new RuntimeException("RESEND_API_KEY no está configurada en el servidor.");
+    private boolean sendViaBrevo(String toEmail, String subject, String htmlContent, EmailConfig config) {
+        if (brevoApiKey == null || brevoApiKey.isBlank()) {
+            log.error("BREVO_API_KEY no configurada");
+            throw new RuntimeException("BREVO_API_KEY no está configurada en el servidor.");
         }
 
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(resendApiKey);
+            headers.set("api-key", brevoApiKey);
 
-            // Resend free tier: from debe ser onboarding@resend.dev
-            // El senderEmail se usa como reply-to para que las respuestas lleguen al correo real
-            String fromEmail = config.getSenderName() + " <onboarding@resend.dev>";
+            Map<String, Object> sender = new LinkedHashMap<>();
+            sender.put("name", config.getSenderName());
+            sender.put("email", config.getSenderEmail());
+
+            Map<String, String> toRecipient = new LinkedHashMap<>();
+            toRecipient.put("email", toEmail);
 
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("from", fromEmail);
-            body.put("to", List.of(toEmail));
+            body.put("sender", sender);
+            body.put("to", List.of(toRecipient));
             body.put("subject", subject);
-            body.put("html", htmlContent);
-            body.put("reply_to", config.getSenderEmail());
+            body.put("htmlContent", htmlContent);
+            body.put("replyTo", sender);
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
             ResponseEntity<Map> response = restTemplate.exchange(
-                    RESEND_API_URL, HttpMethod.POST, request, Map.class
+                    BREVO_API_URL, HttpMethod.POST, request, Map.class
             );
 
             if (response.getStatusCode().is2xxSuccessful()) {
-                log.info("Correo enviado via Resend a: {}", toEmail);
+                log.info("Correo enviado via Brevo a: {}", toEmail);
                 return true;
             } else {
-                log.error("Resend respondio con status {}: {}", response.getStatusCode(), response.getBody());
+                log.error("Brevo respondio con status {}: {}", response.getStatusCode(), response.getBody());
                 return false;
             }
 
         } catch (Exception e) {
-            log.error("Error enviando correo via Resend a {}: {}", toEmail, e.getMessage());
-            throw new RuntimeException("Error al enviar correo: " + e.getMessage());
+            String errorMsg = e.getMessage();
+            log.error("Error enviando correo via Brevo a {}: {}", toEmail, errorMsg);
+            throw new RuntimeException("Error al enviar correo: " + errorMsg);
         }
     }
 
-    /**
-     * Envia correo de bienvenida a un nuevo estudiante
-     */
+    // ==================== METODOS DE ENVIO ====================
+
     public boolean sendWelcomeEmail(String toEmail, String studentName, String username, String password) {
         Optional<EmailConfig> configOpt = emailConfigRepository.getConfig();
 
@@ -106,9 +108,8 @@ public class EmailService {
             log.warn("Email no configurado o desactivado. No se enviara correo a: {}", toEmail);
             return false;
         }
-
         if (toEmail == null || toEmail.isEmpty()) {
-            log.warn("Email del estudiante vacio. No se puede enviar correo.");
+            log.warn("Email del estudiante vacio.");
             return false;
         }
 
@@ -117,121 +118,80 @@ public class EmailService {
         try {
             String title = config.getWelcomeTitle().replace("{nombre}", studentName);
             String content = config.getWelcomeMessage();
-
             String htmlContent = buildEmailHtml(config, title, content, username, password,
                     config.getWelcomeButtonText(), config.getButtonUrl());
-
-            return sendViaResend(toEmail, config.getWelcomeSubject(), htmlContent, config);
-
+            return sendViaBrevo(toEmail, config.getWelcomeSubject(), htmlContent, config);
         } catch (Exception e) {
             log.error("Error enviando correo de bienvenida a {}: {}", toEmail, e.getMessage());
             return false;
         }
     }
 
-    /**
-     * Envia correo de vencimiento proximo
-     */
     public boolean sendExpiringEmail(String toEmail, String studentName, String courseName, int daysLeft) {
         Optional<EmailConfig> configOpt = emailConfigRepository.getConfig();
 
-        if (configOpt.isEmpty() || !configOpt.get().getEnabled()) {
-            return false;
-        }
-
-        if (toEmail == null || toEmail.isEmpty()) {
-            return false;
-        }
+        if (configOpt.isEmpty() || !configOpt.get().getEnabled()) return false;
+        if (toEmail == null || toEmail.isEmpty()) return false;
 
         EmailConfig config = configOpt.get();
 
         try {
-            String title = config.getExpiringTitle()
-                    .replace("{nombre}", studentName);
+            String title = config.getExpiringTitle().replace("{nombre}", studentName);
             String content = config.getExpiringMessage()
                     .replace("{nombre}", studentName)
                     .replace("{curso}", courseName)
                     .replace("{dias}", String.valueOf(daysLeft));
-
             String htmlContent = buildEmailHtml(config, title, content, null, null,
                     config.getExpiringButtonText(), config.getButtonUrl());
-
-            return sendViaResend(toEmail, config.getExpiringSubject(), htmlContent, config);
-
+            return sendViaBrevo(toEmail, config.getExpiringSubject(), htmlContent, config);
         } catch (Exception e) {
             log.error("Error enviando correo de vencimiento: {}", e.getMessage());
             return false;
         }
     }
 
-    /**
-     * Envia correo de curso vencido
-     */
     public boolean sendExpiredEmail(String toEmail, String studentName, String courseName) {
         Optional<EmailConfig> configOpt = emailConfigRepository.getConfig();
 
-        if (configOpt.isEmpty() || !configOpt.get().getEnabled()) {
-            return false;
-        }
-
-        if (toEmail == null || toEmail.isEmpty()) {
-            return false;
-        }
+        if (configOpt.isEmpty() || !configOpt.get().getEnabled()) return false;
+        if (toEmail == null || toEmail.isEmpty()) return false;
 
         EmailConfig config = configOpt.get();
 
         try {
-            String title = config.getExpiredTitle()
-                    .replace("{nombre}", studentName);
+            String title = config.getExpiredTitle().replace("{nombre}", studentName);
             String content = config.getExpiredMessage()
                     .replace("{nombre}", studentName)
                     .replace("{curso}", courseName);
-
             String htmlContent = buildEmailHtml(config, title, content, null, null,
                     config.getExpiredButtonText(), config.getButtonUrl());
-
-            return sendViaResend(toEmail, config.getExpiredSubject(), htmlContent, config);
-
+            return sendViaBrevo(toEmail, config.getExpiredSubject(), htmlContent, config);
         } catch (Exception e) {
             log.error("Error enviando correo de vencido: {}", e.getMessage());
             return false;
         }
     }
 
-    /**
-     * Envia correo masivo personalizado
-     */
     public boolean sendMassiveEmail(String toEmail, String studentName, String subject, String customMessage) {
         Optional<EmailConfig> configOpt = emailConfigRepository.getConfig();
 
-        if (configOpt.isEmpty() || !configOpt.get().getEnabled()) {
-            return false;
-        }
-
-        if (toEmail == null || toEmail.isEmpty()) {
-            return false;
-        }
+        if (configOpt.isEmpty() || !configOpt.get().getEnabled()) return false;
+        if (toEmail == null || toEmail.isEmpty()) return false;
 
         EmailConfig config = configOpt.get();
 
         try {
             String title = "¡Hola, " + studentName + "!";
             String content = customMessage.replace("{nombre}", studentName);
-
             String htmlContent = buildEmailHtml(config, title, content, null, null,
                     "VER MAS", config.getButtonUrl());
-
-            return sendViaResend(toEmail, subject, htmlContent, config);
-
+            return sendViaBrevo(toEmail, subject, htmlContent, config);
         } catch (Exception e) {
             log.error("Error enviando correo masivo a {}: {}", toEmail, e.getMessage());
             return false;
         }
     }
 
-    /**
-     * Prueba la configuracion de correo
-     */
     public boolean sendTestEmail(String toEmail) {
         Optional<EmailConfig> configOpt = emailConfigRepository.getConfig();
 
@@ -245,20 +205,19 @@ public class EmailService {
             throw new RuntimeException("No hay correo emisor configurado.");
         }
 
-        if (resendApiKey == null || resendApiKey.isBlank()) {
-            throw new RuntimeException("RESEND_API_KEY no está configurada en el servidor. Agrega la variable de entorno en Render.");
+        if (brevoApiKey == null || brevoApiKey.isBlank()) {
+            throw new RuntimeException("BREVO_API_KEY no está configurada en el servidor.");
         }
 
         String htmlContent = buildEmailHtml(config, "¡Configuración correcta!",
-                "El sistema de correos está funcionando correctamente mediante Resend.", null, null,
+                "El sistema de correos está funcionando correctamente.", null, null,
                 "IR A LA PLATAFORMA", config.getButtonUrl());
 
-        return sendViaResend(toEmail, "Prueba de configuración - " + config.getSenderName(), htmlContent, config);
+        return sendViaBrevo(toEmail, "Prueba de configuración - " + config.getSenderName(), htmlContent, config);
     }
 
-    /**
-     * Construye el HTML del correo usando la configuracion de plantilla
-     */
+    // ==================== HTML BUILDER ====================
+
     private String buildEmailHtml(EmailConfig config, String title, String message,
                                    String username, String password, String buttonText, String buttonUrl) {
 
