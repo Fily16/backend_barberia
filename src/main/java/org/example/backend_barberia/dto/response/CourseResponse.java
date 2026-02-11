@@ -21,6 +21,7 @@ public class CourseResponse {
     private Boolean active;
     private Integer orderIndex;
     private Integer totalVideos;
+    private List<VideoResponse> coverVideos;
     private List<VideoResponse> theoryVideos;
     private List<VideoResponse> practiceVideos;
 }

@@ -431,9 +431,23 @@ public class CourseService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Obtiene el video de portada de un curso (público, sin autenticación)
+     */
+    public VideoResponse getCoverVideo(String slug) {
+        Video cover = videoRepository.findFirstByCourseSlugAndTypeAndActiveTrue(slug, VideoType.COVER)
+                .orElse(null);
+        return cover != null ? mapVideoToResponse(cover) : null;
+    }
+
     // ==================== MAPPERS ====================
 
     private CourseResponse mapToResponse(Course course) {
+        List<VideoResponse> coverVideos = course.getVideos().stream()
+                .filter(v -> v.getType() == VideoType.COVER && v.getActive())
+                .map(this::mapVideoToResponse)
+                .collect(Collectors.toList());
+
         List<VideoResponse> theoryVideos = course.getVideos().stream()
                 .filter(v -> v.getType() == VideoType.THEORY && v.getActive())
                 .map(this::mapVideoToResponse)
@@ -453,6 +467,7 @@ public class CourseService {
                 .active(course.getActive())
                 .orderIndex(course.getOrderIndex())
                 .totalVideos(theoryVideos.size() + practiceVideos.size())
+                .coverVideos(coverVideos)
                 .theoryVideos(theoryVideos)
                 .practiceVideos(practiceVideos)
                 .build();

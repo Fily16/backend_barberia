@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface VideoRepository extends JpaRepository<Video, Long> {
@@ -17,4 +18,6 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
     List<Video> findByCourseIdAndActiveTrueOrderByOrderIndexAsc(Long courseId);
     
     int countByCourseId(Long courseId);
+    
+    Optional<Video> findFirstByCourseSlugAndTypeAndActiveTrue(String slug, VideoType type);
 }
