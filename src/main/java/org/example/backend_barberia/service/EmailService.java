@@ -9,6 +9,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -19,10 +20,13 @@ public class EmailService {
     private final EmailConfigRepository emailConfigRepository;
     private final RestTemplate restTemplate = new RestTemplate();
 
-    private static final String BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
+    private static final String MAILJET_API_URL = "https://api.mailjet.com/v3.1/send";
 
-    @Value("${brevo.api-key:}")
-    private String brevoApiKey;
+    @Value("${mailjet.api-key:}")
+    private String mailjetApiKey;
+
+    @Value("${mailjet.secret-key:}")
+    private String mailjetSecretKey;
 
     /**
      * Obtiene la configuracion actual del correo
@@ -33,8 +37,6 @@ public class EmailService {
 
     /**
      * Guarda o actualiza la configuracion del correo.
-     * Si no se envia appPassword (porque el frontend no lo devuelve),
-     * se conserva el password existente en la BD.
      */
     public EmailConfig saveEmailConfig(EmailConfig config) {
         config.setId(1L);
@@ -48,53 +50,61 @@ public class EmailService {
         return emailConfigRepository.save(config);
     }
 
-    // ==================== ENVIO VIA BREVO API ====================
+    // ==================== ENVIO VIA MAILJET API v3.1 ====================
 
     /**
-     * Envia un correo usando la API HTTP de Brevo (ex Sendinblue).
+     * Envia un correo usando la API HTTP de Mailjet v3.1.
+     * Usa Basic Auth con API Key + Secret Key.
      * Funciona en cualquier hosting sin restricciones de puertos SMTP.
      */
-    private boolean sendViaBrevo(String toEmail, String subject, String htmlContent, EmailConfig config) {
-        if (brevoApiKey == null || brevoApiKey.isBlank()) {
-            log.error("BREVO_API_KEY no configurada");
-            throw new RuntimeException("BREVO_API_KEY no está configurada en el servidor.");
+    private boolean sendViaMailjet(String toEmail, String subject, String htmlContent, EmailConfig config) {
+        if (mailjetApiKey == null || mailjetApiKey.isBlank() || mailjetSecretKey == null || mailjetSecretKey.isBlank()) {
+            log.error("MAILJET_API_KEY o MAILJET_SECRET_KEY no configuradas");
+            throw new RuntimeException("Las credenciales de Mailjet no están configuradas en el servidor.");
         }
 
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("api-key", brevoApiKey);
 
-            Map<String, Object> sender = new LinkedHashMap<>();
-            sender.put("name", config.getSenderName());
-            sender.put("email", config.getSenderEmail());
+            // Basic Auth: base64(apiKey:secretKey)
+            String auth = mailjetApiKey + ":" + mailjetSecretKey;
+            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
+            headers.set("Authorization", "Basic " + encodedAuth);
 
-            Map<String, String> toRecipient = new LinkedHashMap<>();
-            toRecipient.put("email", toEmail);
+            // Estructura Mailjet v3.1
+            Map<String, Object> from = new LinkedHashMap<>();
+            from.put("Email", config.getSenderEmail());
+            from.put("Name", config.getSenderName());
+
+            Map<String, Object> toRecipient = new LinkedHashMap<>();
+            toRecipient.put("Email", toEmail);
+
+            Map<String, Object> message = new LinkedHashMap<>();
+            message.put("From", from);
+            message.put("To", List.of(toRecipient));
+            message.put("Subject", subject);
+            message.put("HTMLPart", htmlContent);
 
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("sender", sender);
-            body.put("to", List.of(toRecipient));
-            body.put("subject", subject);
-            body.put("htmlContent", htmlContent);
-            body.put("replyTo", sender);
+            body.put("Messages", List.of(message));
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
             ResponseEntity<Map> response = restTemplate.exchange(
-                    BREVO_API_URL, HttpMethod.POST, request, Map.class
+                    MAILJET_API_URL, HttpMethod.POST, request, Map.class
             );
 
             if (response.getStatusCode().is2xxSuccessful()) {
-                log.info("Correo enviado via Brevo a: {}", toEmail);
+                log.info("Correo enviado via Mailjet a: {}", toEmail);
                 return true;
             } else {
-                log.error("Brevo respondio con status {}: {}", response.getStatusCode(), response.getBody());
+                log.error("Mailjet respondio con status {}: {}", response.getStatusCode(), response.getBody());
                 return false;
             }
 
         } catch (Exception e) {
             String errorMsg = e.getMessage();
-            log.error("Error enviando correo via Brevo a {}: {}", toEmail, errorMsg);
+            log.error("Error enviando correo via Mailjet a {}: {}", toEmail, errorMsg);
             throw new RuntimeException("Error al enviar correo: " + errorMsg);
         }
     }
@@ -120,7 +130,7 @@ public class EmailService {
             String content = config.getWelcomeMessage();
             String htmlContent = buildEmailHtml(config, title, content, username, password,
                     config.getWelcomeButtonText(), config.getButtonUrl());
-            return sendViaBrevo(toEmail, config.getWelcomeSubject(), htmlContent, config);
+            return sendViaMailjet(toEmail, config.getWelcomeSubject(), htmlContent, config);
         } catch (Exception e) {
             log.error("Error enviando correo de bienvenida a {}: {}", toEmail, e.getMessage());
             return false;
@@ -143,7 +153,7 @@ public class EmailService {
                     .replace("{dias}", String.valueOf(daysLeft));
             String htmlContent = buildEmailHtml(config, title, content, null, null,
                     config.getExpiringButtonText(), config.getButtonUrl());
-            return sendViaBrevo(toEmail, config.getExpiringSubject(), htmlContent, config);
+            return sendViaMailjet(toEmail, config.getExpiringSubject(), htmlContent, config);
         } catch (Exception e) {
             log.error("Error enviando correo de vencimiento: {}", e.getMessage());
             return false;
@@ -165,7 +175,7 @@ public class EmailService {
                     .replace("{curso}", courseName);
             String htmlContent = buildEmailHtml(config, title, content, null, null,
                     config.getExpiredButtonText(), config.getButtonUrl());
-            return sendViaBrevo(toEmail, config.getExpiredSubject(), htmlContent, config);
+            return sendViaMailjet(toEmail, config.getExpiredSubject(), htmlContent, config);
         } catch (Exception e) {
             log.error("Error enviando correo de vencido: {}", e.getMessage());
             return false;
@@ -185,7 +195,7 @@ public class EmailService {
             String content = customMessage.replace("{nombre}", studentName);
             String htmlContent = buildEmailHtml(config, title, content, null, null,
                     "VER MAS", config.getButtonUrl());
-            return sendViaBrevo(toEmail, subject, htmlContent, config);
+            return sendViaMailjet(toEmail, subject, htmlContent, config);
         } catch (Exception e) {
             log.error("Error enviando correo masivo a {}: {}", toEmail, e.getMessage());
             return false;
@@ -205,15 +215,15 @@ public class EmailService {
             throw new RuntimeException("No hay correo emisor configurado.");
         }
 
-        if (brevoApiKey == null || brevoApiKey.isBlank()) {
-            throw new RuntimeException("BREVO_API_KEY no está configurada en el servidor.");
+        if (mailjetApiKey == null || mailjetApiKey.isBlank() || mailjetSecretKey == null || mailjetSecretKey.isBlank()) {
+            throw new RuntimeException("Las credenciales de Mailjet no están configuradas en el servidor.");
         }
 
         String htmlContent = buildEmailHtml(config, "¡Configuración correcta!",
                 "El sistema de correos está funcionando correctamente.", null, null,
                 "IR A LA PLATAFORMA", config.getButtonUrl());
 
-        return sendViaBrevo(toEmail, "Prueba de configuración - " + config.getSenderName(), htmlContent, config);
+        return sendViaMailjet(toEmail, "Prueba de configuración - " + config.getSenderName(), htmlContent, config);
     }
 
     // ==================== HTML BUILDER ====================
