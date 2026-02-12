@@ -11,6 +11,7 @@ import org.example.backend_barberia.entity.UserCourse;
 import org.example.backend_barberia.exception.BadRequestException;
 import org.example.backend_barberia.exception.ResourceNotFoundException;
 import org.example.backend_barberia.repository.UserRepository;
+import org.example.backend_barberia.repository.PaymentRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final PaymentRepository paymentRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
 
@@ -165,6 +167,8 @@ public class UserService {
     public void deleteUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario", id));
+        // Eliminar pagos relacionados primero
+        paymentRepository.deleteByUserId(id);
         userRepository.delete(user);
     }
 

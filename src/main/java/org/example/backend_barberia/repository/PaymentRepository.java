@@ -52,4 +52,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // Pagos recientes con límite personalizado
     @Query("SELECT p FROM Payment p ORDER BY p.paymentDate DESC")
     List<Payment> findRecentPayments();
+
+    // Eliminar pagos de un usuario
+    void deleteByUserId(Long userId);
 }
