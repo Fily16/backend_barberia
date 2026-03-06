@@ -70,7 +70,7 @@ public class DataInitializer {
                 log.info("✅ Usuario ADMIN creado: admin / admin123");
             }
 
-            // Crear curso de ejemplo si no existe
+            // Crear curso si no existe (sin videos placeholder - se vinculan desde el admin)
             if (!courseRepository.existsBySlug("basic-training")) {
                 Course course = Course.builder()
                         .slug("basic-training")
@@ -81,45 +81,7 @@ public class DataInitializer {
                         .active(true)
                         .build();
                 courseRepository.save(course);
-
-                // Videos de Teoría
-                Video teoria = Video.builder()
-                        .title("Fundamentos de la Barbería")
-                        .description("Video teórico sobre los fundamentos básicos")
-                        .videoUrl("https://www.youtube.com/embed/dQw4w9WgXcQ")
-                        .thumbnailUrl("https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=600")
-                        .duration("45:00")
-                        .type(VideoType.THEORY)
-                        .orderIndex(0)
-                        .active(true)
-                        .course(course)
-                        .build();
-                videoRepository.save(teoria);
-
-                // Videos de Práctica
-                String[] practicaTitles = {
-                        "Técnicas Básicas",
-                        "Manejo de Herramientas",
-                        "Corte con Máquina",
-                        "Acabados Profesionales"
-                };
-                String[] practicaDurations = {"15:30", "18:45", "20:00", "16:20"};
-
-                for (int i = 0; i < practicaTitles.length; i++) {
-                    Video practica = Video.builder()
-                            .title(practicaTitles[i])
-                            .videoUrl("https://www.youtube.com/embed/dQw4w9WgXcQ")
-                            .thumbnailUrl("https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=300")
-                            .duration(practicaDurations[i])
-                            .type(VideoType.PRACTICE)
-                            .orderIndex(i)
-                            .active(true)
-                            .course(course)
-                            .build();
-                    videoRepository.save(practica);
-                }
-
-                log.info("✅ Curso 'BASIC TRAINING' creado con 5 videos");
+                log.info("✅ Curso 'BASIC TRAINING' creado (vincular videos desde admin)");
             }
 
             // Crear estudiante de prueba si no existe
